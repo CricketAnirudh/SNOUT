@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""
+SNOUT wiring sanity check.
+
+Prints live raw ADC values (0-1023) and converted voltage for all 7 MQ
+channels, continuously, so you can confirm the MCP3008 is wired correctly
+before trusting it with real sniff data.
+
+Look for:
+  - All 7 channels showing DIFFERENT, non-zero, non-pegged values
+    (not all 0, not all 1023 — either usually means a wiring mistake)
+  - Values that RESPOND when you breathe on / wave something near a sensor
+  - Nothing pegged at 1023 (would mean a divider isn't scaling something down)
+
+Ctrl+C to stop.
+"""
+
+import time
+import spidev
+
+CHANNELS = ["MQ135", "MQ8", "MQ6", "MQ5", "MQ4", "MQ3", "MQ2"]
+VREF = 3.3  # MCP3008 powered from Pi's 3.3V rail
+
+spi = spidev.SpiDev()
+spi.open(0, 0)
+spi.max_speed_hz = 1350000
+
+
+def read_channel(ch: int) -> int:
+    assert 0 <= ch <= 7
+    cmd = [1, (8 + ch) << 4, 0]
+    resp = spi.xfer2(cmd)
+    return ((resp[1] & 3) << 8) + resp[2]
+
+
+def main():
+    print("SNOUT wiring check. Ctrl+C to stop.\n")
+    try:
+        while True:
+            readings = []
+            for idx, name in enumerate(CHANNELS):
+                raw = read_channel(idx)
+                volts = raw / 1023 * VREF
+                readings.append(f"{name:>6}: {raw:4d}  ({volts:.2f}V)")
+            print("  |  ".join(readings))
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        print("\nDone.")
+    finally:
+        spi.close()
+
+
+if __name__ == "__main__":
+    main()
